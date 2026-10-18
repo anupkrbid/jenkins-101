@@ -1,0 +1,67 @@
+services:
+  jenkins-dind:
+    image: docker:dind
+    container_name: jenkins-dind
+    privileged: true
+    restart: unless-stopped
+
+    environment:
+      DOCKER_TLS_CERTDIR: /certs
+
+    volumes:
+      - jenkins-dind-certs:/certs/client
+      - jenkins-data:/var/jenkins_home
+
+    networks:
+      jenkins-network:
+        aliases:
+          - docker
+
+    healthcheck:
+      test: ["CMD-SHELL", "docker version --format '{{.Server.Version}}' >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+    # No host port publishing needed.
+    # Jenkins accesses DinD over the internal network.
+    command:
+      - --storage-driver=overlay2
+
+  jenkins:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: jenkins:local
+    container_name: jenkins-ui
+    restart: unless-stopped
+
+    depends_on:
+      jenkins-dind:
+        condition: service_healthy
+
+    environment:
+      DOCKER_HOST: tcp://docker:2376
+      DOCKER_CERT_PATH: /certs/client
+      DOCKER_TLS_VERIFY: "1"
+
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+
+    volumes:
+      - jenkins-data:/var/jenkins_home
+      - jenkins-dind-certs:/certs/client:ro
+
+    networks:
+      - jenkins-network
+
+networks:
+  jenkins-network:
+    name: jenkins-network
+    driver: bridge
+
+volumes:
+  jenkins-data:
+  jenkins-dind-certs:
